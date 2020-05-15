@@ -20,23 +20,18 @@ class TowelDataset(Dataset):
 
     def __init__(self, root_dir, phase, use_transform=True, datasize=None):
         self.root_dir = root_dir
+        self.phase = phase
         self.use_transform = use_transform
 
-        def index(x):
-            return(int(x.split("_")[1]))
-        filename = os.listdir(self.root_dir)
-        filename = [f for f in filename if f.startswith("rgb")]
-        self.imgs = filename
-        if datasize is not None:
-            self.imgs = filename[0:datasize]
+        filename = [f for f in os.listdir(self.root_dir) if f.startswith("rgb")]
+        self.imgs = filename if datasize is None else filename[0:datasize]
 
-        if phase == 'train':
+        if self.phase == 'train':
             self.total_data_num = int(len(self.imgs)/6*4) if len(self.imgs) > 6 else len(self.imgs)
-        elif phase == 'val':
+        elif self.phase == 'val':
             self.total_data_num = int(len(self.imgs)/6)
-        elif phase == 'test':
+        elif self.phase == 'test':
             self.total_data_num = int(len(self.imgs)/6)
-        self.phase = phase
 
         print("Datapoints: %d" % self.total_data_num)
     
