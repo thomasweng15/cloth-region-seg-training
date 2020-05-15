@@ -22,6 +22,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from utils import weights_init, compute_map, compute_iou, compute_auc, preprocessHeatMap
 from tensorboardX import SummaryWriter
+from PIL import Image
 
 cfgs = {
     "n_feature": 3,
@@ -39,10 +40,6 @@ cfgs = {
     "epochs": 10,
 }
 print(json.dumps(cfgs, sort_keys=True, indent=1))
-
-class Eval:
-    def __init__(self, modelpath):
-        self.modelpath = modelpath
 
 class BaseTrain:
     def __init__(self, cfgs):
@@ -117,7 +114,7 @@ class BaseTrain:
             aucs.append(compute_auc(g, p, self.n_class))
         return maps, ious, aucs
 
-class Train(BaseTrain):
+class TrainSeg(BaseTrain):
     def __init__(self, cfgs):
         super().__init__(cfgs)
         self.init_model()
@@ -220,25 +217,32 @@ class Train(BaseTrain):
         values = [np.nanmean(losses), pixel_map, np.nanmean(ious), mean_auc]
         self.tboard(self.val_writer, names, values, epoch)
 
+class Test:
+    def __init__(self, model_path, n_features=3):
+        self.model_path = model_path
+        self.n_features = n_features
+        self.load_model()
+
+    def load_model(self):
+        self.model = unet(n_classes=self.n_features, in_channels=1)
+        self.model.load_state_dict(torch.load(self.model_path))
+        self.use_gpu = torch.cuda.is_available()
+        if self.use_gpu:
+            torch.cuda.device(0)
+            self.model = self.model.cuda()
+
     def evaluate(self, depth):
         self.model.eval()
         img_depth = Image.fromarray(depth, mode='F')
         
         transform = T.Compose([T.ToTensor()])
         img_depth = transform(img_depth)
-        min_I = img_depth.min()
-        max_I = img_depth.max()
-        img_depth[img_depth<=min_I] = min_I
-        img_depth = (img_depth - min_I) / (max_I - min_I)
+        img_depth = self.normalize(img_depth)
 
         inputs = img_depth.unsqueeze_(0)
-        inputs = Variable(inputs.cuda())
+        inputs = Variable(inputs.cuda()) if self.use_gpu else Variable(inputs)
         outputs = self.model(inputs)
-        
-#         out = torch.sigmoid(outputs[:,:3,:,:])
-#         plt.imshow(out[0].data.cpu().numpy().squeeze().transpose(1, 2, 0))
-#         plt.show()
-        
+
         outputs = torch.sigmoid(outputs)
         output = outputs.data.cpu().numpy()
         pred = output.transpose(0, 2, 3, 1)
@@ -249,5 +253,5 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(1337)
     np.random.seed(1337)
     random.seed(1337)
-    t = Train(cfgs)
+    t = TrainSeg(cfgs)
     t.train()

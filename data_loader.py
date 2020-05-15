@@ -9,6 +9,7 @@ import random
 import os
 import cv2
 import random
+from utils import normalize
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -34,13 +35,6 @@ class TowelDataset(Dataset):
             self.total_data_num = int(len(self.imgs)/6)
 
         print("Datapoints: %d" % self.total_data_num)
-    
-    def normalize(self, img_depth):
-        min_I = img_depth.min()
-        max_I = img_depth.max()
-        img_depth[img_depth<=min_I] = min_I
-        img_depth = (img_depth - min_I) / (max_I - min_I)
-        return img_depth
 
     def __len__(self):
         return self.total_data_num
