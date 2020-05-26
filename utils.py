@@ -6,7 +6,7 @@ from torch.autograd import Variable
 import sklearn.metrics
 from matplotlib import pyplot as plt
 
-def normalize(self, img_depth):
+def normalize(img_depth):
     min_I = img_depth.min()
     max_I = img_depth.max()
     img_depth[img_depth<=min_I] = min_I

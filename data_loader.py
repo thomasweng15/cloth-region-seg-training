@@ -26,9 +26,10 @@ class TowelDataset(Dataset):
 
         filename = [f for f in os.listdir(self.root_dir) if f.startswith("rgb")]
         self.imgs = filename if datasize is None else filename[0:datasize]
+        print(self.imgs)
 
         if self.phase == 'train':
-            self.total_data_num = int(len(self.imgs)/6*4) if len(self.imgs) > 6 else len(self.imgs)
+            self.total_data_num = int(len(self.imgs)/6*4) if len(self.imgs) > 8 else len(self.imgs)
         elif self.phase == 'val':
             self.total_data_num = int(len(self.imgs)/6)
         elif self.phase == 'test':
@@ -48,6 +49,8 @@ class TowelDataset(Dataset):
         imidx = self.imgs[idx].split("_")[1].replace(".png", "")
         img_path = os.path.join(self.root_dir, self.imgs[idx])
         depth_path = os.path.join(self.root_dir, imidx+"_depth.npy")
+        outeredge_path = os.path.join(self.root_dir, imidx+"_labels_yellow.png")
+        invvar_path = os.path.join(self.root_dir, imidx+"_inverse_variance.npy")
 
         img_rgb = Image.open(img_path)
 
@@ -55,14 +58,25 @@ class TowelDataset(Dataset):
         depth_npy[np.isnan(depth_npy)] = max_d = np.nanmax(depth_npy)
         img_depth = Image.fromarray(depth_npy, mode='F')
 
+        img_outeredge = np.array(Image.open(outeredge_path))
+        mask = np.zeros_like(img_outeredge, dtype=np.uint8)
+        mask[img_outeredge == 255] = 255
+        # mask = np.expand_dims(mask, axis=-1)
+        mask = Image.fromarray(mask)
+        # invvarmap = np.expand_dims(np.load(invvar_path).astype(np.float32), axis=-1)
+        invvarmap = np.load(invvar_path).astype(np.float32)
+        invvarmap = Image.fromarray(invvarmap, mode='F')
+
         transform = T.Compose([T.ToTensor()])
         if self.phase == 'test':
             if self.use_transform:
                 img_rgb = transform(img_rgb)
                 img_depth = transform(img_depth)
+                mask = transform(mask)
+                invvarmap = transform(invvarmap)
 
-            img_depth = self.normalize(img_depth)
-            sample = {'rgb': img_rgb, 'X': img_depth}
+            img_depth = normalize(img_depth)
+            sample = {'rgb': img_rgb, 'X': img_depth, 'mask': mask, 'invvar': invvarmap}
         else:
             corners_label = Image.open(os.path.join(self.root_dir, imidx+'_labels_red.png'))
             edges_label = Image.open(os.path.join(self.root_dir, imidx+'_labels_yellow.png'))
@@ -72,12 +86,16 @@ class TowelDataset(Dataset):
                 if random.random() > 0.5:
                     img_rgb = tf.hflip(img_rgb)
                     img_depth = tf.hflip(img_depth)
+                    mask = tf.hflip(mask)
+                    invvarmap = tf.hflip(invvarmap)
                     corners_label = tf.hflip(corners_label)
                     edges_label = tf.hflip(edges_label)
                     inner_edges_label = tf.hflip(inner_edges_label)
                 if random.random() > 0.5:
                     img_rgb = tf.vflip(img_rgb)
                     img_depth = tf.vflip(img_depth)
+                    mask = tf.vflip(mask)
+                    invvarmap = tf.vflip(invvarmap)
                     corners_label = tf.vflip(corners_label)
                     edges_label = tf.vflip(edges_label)
                     inner_edges_label = tf.vflip(inner_edges_label)
@@ -85,20 +103,24 @@ class TowelDataset(Dataset):
                     angle = T.RandomRotation.get_params([-30, 30])
                     img_rgb = tf.rotate(img_rgb, angle, resample=Image.NEAREST)
                     img_depth = tf.rotate(img_depth, angle, resample=Image.NEAREST)
+                    mask = tf.rotate(mask, angle, resample=Image.NEAREST)
+                    invvarmap = tf.rotate(invvarmap, angle, resample=Image.NEAREST)
                     corners_label = tf.rotate(corners_label, angle, resample=Image.NEAREST)
                     edges_label = tf.rotate(edges_label, angle, resample=Image.NEAREST)
                     inner_edges_label = tf.rotate(inner_edges_label, angle, resample=Image.NEAREST)
             img_rgb = transform(img_rgb)
             img_depth = transform(img_depth)
+            mask = transform(mask)
+            invvarmap = transform(invvarmap)
 
             corners_label = transform(corners_label)
             edges_label = transform(edges_label)
             inner_edges_label = transform(inner_edges_label)
 
             label = torch.cat((corners_label, edges_label, inner_edges_label), 0)
-            img_depth = self.normalize(img_depth)
+            img_depth = normalize(img_depth)
 
-            sample = {'rgb': img_rgb, 'X': img_depth, 'Y': label}
+            sample = {'rgb': img_rgb, 'X': img_depth, 'Y': label, 'mask': mask, 'invvarmap': invvarmap}
 
         return sample
 
