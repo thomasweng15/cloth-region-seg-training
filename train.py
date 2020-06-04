@@ -199,147 +199,15 @@ class TrainSeg(BaseTrain):
         values = [np.nanmean(losses), pixel_map, np.nanmean(ious), mean_auc]
         self.tboard(self.val_writer, names, values, epoch)
 
-class TrainVar(BaseTrain):
-    def __init__(self, cfgs):
-        super().__init__(cfgs)
-        self.init_model()
-
-    def init_model(self):
-        super().init_model()
-        weights_init(self.model)
-
-        if self.use_gpu:
-            torch.cuda.device(0)
-            self.model = self.model.cuda()
-        
-        # self.criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(2.).to('cuda'))
-        # self.criterion = nn.BCEWithLogitsLoss()
-        self.criterion = nn.MSELoss()
-
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.cfgs["lr"], weight_decay=self.cfgs["w_decay"])
-        self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=self.cfgs["step_size"], gamma=self.cfgs["gamma"])  # decay LR by a factor of 0.5 every 30 epochs
-
-    def get_batch(self, batch):
-        inputs = Variable(batch['X'].cuda()) if self.use_gpu else Variable(batch['X'])
-        labels = Variable(batch['invvarmap'].cuda()) if self.use_gpu else Variable(batch['invvarmap'])
-        mask = Variable(batch['mask'].cuda()) if self.use_gpu else Variable(batch['mask'])
-        return inputs, labels, mask
-
-    def train(self):
-        ts = time.time()
-        for epoch in range(self.cfgs["epochs"]):
-            self.model.train()
-            self.scheduler.step()
-
-            losses = []
-            # maps, ious, aucs = ([] for i in range(3))
-            for iter, batch in enumerate(self.train_loader):
-                self.optimizer.zero_grad()
-                inputs, labels, mask = self.get_batch(batch)
-                outputs = self.model(inputs)
-
-                # Compute losses
-                sigout = torch.sigmoid(outputs)
-                # sigout = outputs
-
-                # print(np.unique(mask.data.cpu().numpy()))
-                # print(sigout.data.type())
-                # print(labels.data.type())
-
-                # plt.subplot(311)
-                # plt.imshow(mask.data.cpu().numpy().squeeze(), vmin=0.0)
-                # plt.colorbar()
-                # plt.subplot(312)
-                # plt.imshow((sigout*mask).data.cpu().numpy().squeeze(), vmin=0.0)
-                # plt.colorbar()
-                # plt.subplot(313)
-                # plt.imshow((labels*mask).data.cpu().numpy().squeeze(), vmin=0.0)
-                # plt.show()
-
-                loss = self.loss(sigout*mask, labels*mask)
-                losses.append(loss.item())
-                loss.backward()
-                self.optimizer.step()
-
-                if iter % 10 == 0:
-                    print("epoch%d, iter%d, loss: %0.5f" % (epoch, iter, loss))
-
-                # batch_maps, batch_ious, batch_aucs = self.metrics(outputs, labels)
-                # maps += batch_maps
-                # ious += batch_ious
-                # aucs += batch_aucs
-
-            # ious = np.nanmean(ious, axis=1)
-            # pixel_map = np.nanmean(maps)
-            # mean_auc = np.nanmean(aucs)
-
-            # Write to tensorboard
-            names = ['loss']
-            values = [np.nanmean(losses)]
-            # names = ['loss', 'MAP', 'meanIOU', 'meanAUC']
-            # values = [np.nanmean(losses), pixel_map, np.nanmean(ious), mean_auc]
-            self.tboard(self.train_writer, names, values, epoch)
-            print("summary writer add train loss: " + str(np.nanmean(losses)))
-            print("Finish epoch {}, time elapsed {}".format(epoch, time.time() - ts))
-
-            if epoch % 20 == 0:
-                if self.datasize == None or self.datasize > 8:
-                    self.val(epoch)
-                torch.save(self.model.state_dict(), os.path.join(self.chkpnts_path, "%s_epoch%d" % (self.run_id, epoch)))
-        self.train_writer.close()
-        self.val_writer.close()
-
-    def val(self, epoch):
-        self.model.eval()
-        num_batches = len(self.val_loader)
-        losses = []
-        # maps, ious, aucs = ([] for i in range(3))
-        for iter, batch in enumerate(self.val_loader):
-            inputs, labels, mask = self.get_batch(batch)
-            outputs = self.model(inputs)
-            sigout = torch.sigmoid(outputs)
-
-            with torch.no_grad():
-                loss = self.loss(sigout*mask, labels*mask)
-                losses.append(loss.item())
-
-                # batch_maps, batch_ious, batch_aucs = self.metrics(outputs, labels)
-                # maps += batch_maps
-                # ious += batch_ious
-                # aucs += batch_aucs
-
-            if epoch % 50 == 0 and iter == 0:
-                hm = torch.sigmoid(outputs[0, :, :, :])
-                self.val_writer.add_image('hm', hm, epoch)
-
-        # Calculate average
-        # ious = np.array(ious).T  # n_class * val_len
-        # ious = np.nanmean(ious, axis=1)
-        # pixel_map = np.nanmean(maps)
-        # mean_auc = np.nanmean(aucs)
-        # print("epoch{}, pix_map: {}, meanAUC: {}, meanIoU: {}, IoUs: {}".format(epoch, pixel_map, mean_auc, np.nanmean(ious), ious))
-        # self.iou_scores[epoch] = ious
-        # np.save(os.path.join(self.score_dir, "meanIOU"), self.iou_scores)
-        # self.pixel_scores[epoch] = pixel_map
-        # np.save(os.path.join(self.score_dir, "PixelMAP"), self.pixel_scores)
-
-        names = ['loss']
-        values = [np.nanmean(losses)]
-        # names = ['loss', 'MAP', 'meanIOU', 'meanAUC']
-        # values = [np.nanmean(losses), pixel_map, np.nanmean(ious), mean_auc]
-        self.tboard(self.val_writer, names, values, epoch)
-        
-
 if __name__ == '__main__':
     torch.manual_seed(1337)
     torch.cuda.manual_seed(1337)
     np.random.seed(1337)
     random.seed(1337)
 
-    with open('configs/variance.json', 'r') as f:
+    with open('configs/segmentation.json', 'r') as f:
         cfgs = json.loads(f.read())
     print(json.dumps(cfgs, sort_keys=True, indent=1))
 
-    t = TrainVar(cfgs)
-    # t = TrainSeg(cfgs)
+    t = TrainSeg(cfgs)
     t.train()
