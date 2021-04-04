@@ -31,18 +31,6 @@ class unet(nn.Module):
 
         self.center = unetConv2(filters[3], filters[4], self.is_batchnorm)
 
-        # bdbox regression
-        # self.fc1 = nn.Sequential(
-        #     nn.Linear(196608, 1024), nn.BatchNorm1d(1024), nn.ReLU()
-        # )
-        self.fc1 = nn.Sequential(
-            nn.Linear(114688, 1024), nn.BatchNorm1d(1024), nn.ReLU()
-        )
-        self.fc2 = nn.Sequential(
-            nn.Linear(1024, 256), nn.BatchNorm1d(256), nn.ReLU()
-        )
-        self.fc3 = nn.Sequential(nn.Linear(256, 4))
-
         # upsampling
         self.up_concat4 = unetUp(filters[4], filters[3], self.is_deconv)
         self.up_concat3 = unetUp(filters[3], filters[2], self.is_deconv)
@@ -67,12 +55,6 @@ class unet(nn.Module):
 
         center = self.center(maxpool4)
 
-        # flatten = center.view(-1, 196608)
-        #flatten = center.view(-1, 114688)
-        #bdbox = self.fc1(flatten)
-        #bdbox = self.fc2(bdbox)
-        #bdbox = self.fc3(bdbox)
-
         up4 = self.up_concat4(conv4, center)
         up3 = self.up_concat3(conv3, up4)
         up2 = self.up_concat2(conv2, up3)
@@ -80,4 +62,4 @@ class unet(nn.Module):
 
         final = self.final(up1)
 
-        return final#, bdbox
+        return final
